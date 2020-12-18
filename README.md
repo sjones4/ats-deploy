@@ -47,15 +47,17 @@ deployment.
 
 Maintenance playbooks support operations of a previously deployed cloud.
 
-* Add a new node controller by installing software and registering
-* Remove a node controller by deregistering and uninstalling software
-* Passivate a node controller to prevent it from launching instances
-* Activate a node controller to allow it to launch instances
+* Add a new node controller
+* Remove a node controller
+* Passivate a node controller (to prevent it from launching instances)
+* Activate a node controller (to allow it to launch instances)
 * Evict running instances from a node controller
 
 ### Adding or removing nodes
 
 Maintenance playbooks use the same inventory as the initial deployment.
+Adding a node will install all the required software, and register the node,
+while removing the node will deregister the node, and remove the software.
 For the add/remove node playbooks some inventory changes should be made
 as follows.
 
@@ -72,6 +74,10 @@ from the main `hosts` section. Once the node removal is completed the
 `hosts` section should then be updated.
 
 ### Node activation and eviction
+
+Passivation and activation of nodes are routinely used when doing
+maintenance on hardware (or OS-level software). The administrator will
+run such commands. 
 
 When using maintenance playbooks to activate, passivate or evict a node
 an additional `pattern` is used:

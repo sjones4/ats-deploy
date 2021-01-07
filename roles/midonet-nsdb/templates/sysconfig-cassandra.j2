@@ -1,0 +1,7 @@
+CASSANDRA_CLUSTER_NAME={{ midonet_cassandra_name }}
+{% if 'midonet_nsdb' in groups and (groups.midonet_nsdb|length) >= 2 %}
+CASSANDRA_BROADCAST_ADDRESS={{ eucalyptus_host_cluster_ipv4 }}
+CASSANDRA_SEEDS={{ groups.midonet_nsdb | map("extract", hostvars, ["eucalyptus_host_cluster_ipv4"]) | list | sort | join(",") }}
+{% endif %}
+HEAP_NEWSIZE={{ midonet_cassandra_heapnew | default(midonet_cassandra_heap) }}
+MAX_HEAP_SIZE={{ midonet_cassandra_heap | default(midonet_cassandra_heapnew) }}

@@ -1,0 +1,11 @@
+ZOO_INIT_LIMIT=10
+ZOO_SYNC_LIMIT=5
+ZOO_ADMINSERVER_ENABLED=false
+ZOO_AUTOPURGE_PURGEINTERVAL=1
+ZOO_AUTOPURGE_SNAPRETAINCOUNT=3
+ZOO_MY_ID={{ eucalyptus_zookeeper_server_id }}
+ZOO_SERVERS={% for nsdb in groups.midonet_nsdb | sort %}server.{{ hostvars[nsdb].eucalyptus_zookeeper_server_id }}={% if hostvars[nsdb].eucalyptus_host_cluster_ipv4 == eucalyptus_host_cluster_ipv4 %}0.0.0.0{% else %}{{ hostvars[nsdb].eucalyptus_host_cluster_ipv4 }}{% endif %}:2888:3888 {% endfor %}
+
+ZOO_LISTEN_ADDRESS={{ eucalyptus_host_cluster_ipv4 }}
+JMXDISABLE=true
+JVMFLAGS=-Xmx{{ midonet_zookeeper_heap }} -Xms{{ midonet_zookeeper_heap }}

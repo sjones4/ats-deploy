@@ -170,6 +170,18 @@
   register: cmd_result
   failed_when: "systemd_result is failed and 'no such container' not in cmd_result.stderr"
 
+- name: remove podman container configuration
+  file:
+    path: "/etc/sysconfig/{{ item }}"
+    state: absent
+  loop:
+  - "cassandra"
+  - "midonet-agent"
+  - "midonet-agent-uuid"
+  - "midonet-cluster"
+  - "midonet-cluster-uuid"
+  - "zookeeper"
+
 - name: remove systemd units and drop-ins
   file:
     path: "/etc/systemd/system/{{ item }}"

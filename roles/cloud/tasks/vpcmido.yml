@@ -46,16 +46,6 @@
     group: root
     mode: 0644
 
-- name: midonet cluster systemd drop-in uuid configuration
-  shell: |
-    set -eu
-    cat > /etc/systemd/system/midonet-cluster.service.d/uuid.conf <<EOF
-    [Service]
-    Environment=UUID=$(uuidgen --random)
-    EOF
-  args:
-    creates: /etc/systemd/system/midonet-cluster-http.service.d/uuid.conf
-
 - name: midonet cluster logs directory
   file:
     path: /var/log/midonet-cluster
@@ -70,12 +60,19 @@
     group: root
     mode: 0644
 
+- name: midonet cluster uuid sysconfig
+  shell: |
+    set -eu
+    echo "UUID=$(uuidgen --random)" > /etc/sysconfig/midonet-cluster-uuid
+  args:
+    creates: /etc/sysconfig/midonet-cluster-uuid
+
 - name: midonet cluster container and systemd service
   shell: |
     set -eu
     podman create --name midonet-cluster \
       --env-file /etc/sysconfig/midonet-cluster \
-      --env UUID \
+      --env-file /etc/sysconfig/midonet-cluster-uuid \
       --network host \
       --volume /var/log/midonet-cluster:/var/log/midonet-cluster \
       docker.io/sjones4/midonet-cluster:5.2
@@ -97,16 +94,6 @@
     group: root
     mode: 0644
 
-- name: midonet agent (midolman) systemd drop-in uuid configuration
-  shell: |
-    set -eu
-    cat > /etc/systemd/system/midonet-agent.service.d/uuid.conf <<EOF
-    [Service]
-    Environment=UUID=$(uuidgen --random)
-    EOF
-  args:
-    creates: /etc/systemd/system/midonet-agent.service.d/uuid.conf
-
 - name: midonet agent (midolman) logs directory
   file:
     path: /var/log/midonet-agent
@@ -121,12 +108,19 @@
     group: root
     mode: 0644
 
+- name: midonet agent (midolman) uuid sysconfig
+  shell: |
+    set -eu
+    echo "UUID=$(uuidgen --random)" > /etc/sysconfig/midonet-agent-uuid
+  args:
+    creates: /etc/sysconfig/midonet-agent-uuid
+
 - name: midonet agent (midolman) container and systemd service
   shell: |
     set -eu
     podman create --name midonet-agent \
       --env-file /etc/sysconfig/midonet-agent \
-      --env UUID \
+      --env-file /etc/sysconfig/midonet-cluster-uuid \
       --net host \
       --privileged \
       --volume /var/log/midonet-agent:/var/log/midolman \

@@ -2,7 +2,8 @@
 # Update tunnel zone for eucalyptus hosts
 set -euo pipefail
 
-MIDONET_CLI="midonet-cli -A --midonet-url=http://127.0.0.1:8080/midonet-api -e "
+MIDONET_HOST="${MIDONET_HOST:-127.0.0.1:8080}"
+MIDONET_CLI="midonet-cli -A --midonet-url=http://${MIDONET_HOST}/midonet-api -e "
 EUCA_CONF="/etc/eucalyptus/eucalyptus.conf"
 EUCA_TZ_NAME="eucatz"
 EUCA_TZ_HOSTS="${EUCA_TZ_HOST_EXTRAS:-} {{ eucalyptus_host_cluster_ipv4 }}"

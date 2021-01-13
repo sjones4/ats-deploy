@@ -48,11 +48,11 @@
   register: systemd_result
   failed_when: "systemd_result is failed and 'Could not find the requested service' not in systemd_result.msg"
 
-- name: disable midolman service
+- name: disable midonet-agent service
   systemd:
     enabled: false
     state: stopped
-    name: midolman
+    name: midonet-agent
   register: systemd_result
   failed_when: "systemd_result is failed and 'Could not find the requested service' not in systemd_result.msg"
 
@@ -159,19 +159,34 @@
       - python-rados
     state: absent
 
+- name: remove podman containers
+  command:
+    cmd: "podman rm --force {{ item }}"
+  loop:
+  - "cassandra"
+  - "midonet-agent"
+  - "midonet-cluster"
+  - "zookeeper"
+  register: cmd_result
+  failed_when: "systemd_result is failed and 'no such container' not in cmd_result.stderr"
+
 - name: remove systemd units and drop-ins
   file:
     path: "/etc/systemd/system/{{ item }}"
     state: absent
   loop:
+  - "cassandra.service"
   - "cassandra.service.d"
   - "ceph-osd@.service.d"
   - "certbot-renew.service.d"
   - "eucalyptus-vpcmido-gwnet.service"
   - "eucanetd.service.d"
-  - "midolman.service.d"
+  - "midonet-agent.service"
+  - "midonet-agent.service.d"
+  - "midonet-cluster.service"
   - "midonet-cluster.service.d"
   - "minio.service"
+  - "zookeeper.service"
   - "zookeeper.service.d"
 
 - name: remove eucaconsole configuration directory

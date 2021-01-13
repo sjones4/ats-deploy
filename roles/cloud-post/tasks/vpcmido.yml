@@ -1,10 +1,13 @@
 ---
 - name: eucalyptus initial tunnel zone configuration
-  command:
-    cmd: /usr/local/bin/eucalyptus-vpcmidotz-up.sh
-  environment:
-    PYTHONPATH: /usr/lib/python2.7/site-packages/WebOb-1.4.1-py2.7.egg/
-    EUCA_TZ_HOST_EXTRAS: "{{ groups.node | map('extract', hostvars, ['eucalyptus_host_cluster_ipv4']) | list | sort | join(' ') }}"
+  shell: |
+    set -eu
+    podman run --rm \
+      --volume /usr/local/bin/eucalyptus-vpcmidotz-up.sh:/usr/local/bin/eucalyptus-vpcmidotz-up.sh:ro \
+      --volume /etc/eucalyptus/eucalyptus.conf:/etc/eucalyptus/eucalyptus.conf:ro \
+      --network host \
+      docker.io/sjones4/midonet-cluster:5.2 \
+      /usr/local/bin/eucalyptus-vpcmidotz-up.sh
 
 - name: create eucalyptus account default vpc
   shell: |

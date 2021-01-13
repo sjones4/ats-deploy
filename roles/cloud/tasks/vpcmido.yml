@@ -1,32 +1,12 @@
 ---
-- name: install midonet and dependency packages
+- name: install midonet related packages
   yum:
     name:
-      - java-1.8.0-openjdk-headless
-      - midolman
-      - midonet-cluster
-      - midonet-tools
-      - python-midonetclient
+      - podman
     state: present
   tags:
     - image
     - packages
-
-- name: midonet configuration
-  template:
-    src: midonet.conf.j2
-    dest: /etc/midonet/midonet.conf
-    owner: root
-    group: root
-    mode: 0644
-
-- name: midolman configuration
-  template:
-    src: midolman.conf.j2
-    dest: /etc/midolman/midolman.conf
-    owner: root
-    group: root
-    mode: 0644
 
 - name: eucalyptus midonet gateway veth unit
   template:
@@ -52,74 +32,108 @@
       net/ipv4/conf/{{ cloud_firewalld_public_interface }}/proxy_arp=1
   when: vpcmido_gw_srv_veth_create
 
-- name: midonet defaults configuration
-  template:
-    src: midonet-default.conf.j2
-    dest: /etc/midonet/midonet-default.conf
-    owner: root
-    group: root
-    mode: 0644
-
-- name: midonet apply defaults configuration
-  shell:
-    cmd: mn-conf set -t default < /etc/midonet/midonet-default.conf
-
-- name: midonet cluster heap memory
-  replace:
-    path: /etc/midonet-cluster/midonet-cluster-env.sh
-    regexp: '^HEAP_NEWSIZE=".+"$'
-    replace: 'HEAP_NEWSIZE="{{ midonet_cluster_heap }}"'
-  when: midonet_cluster_heap is not none
-
-- name: midonet cluster heap new memory
-  replace:
-    path: /etc/midonet-cluster/midonet-cluster-env.sh
-    regexp: '^MAX_HEAP_SIZE=".+"$'
-    replace: 'MAX_HEAP_SIZE="{{ midonet_cluster_heap }}"'
-  when: midonet_cluster_heap is not none
-
 - name: midonet cluster systemd drop-in directory
   file:
     path: /etc/systemd/system/midonet-cluster.service.d
     state: directory
     mode: 0755
-  tags:
-    - image
 
-- name: midonet cluster systemd drop-in for disabling jmx listener
+- name: midonet cluster systemd drop-in configuration
   copy:
-    dest: /etc/systemd/system/midonet-cluster.service.d/jmxdisable.conf
+    src: systemd-midonet-cluster-overrides.conf
+    dest: /etc/systemd/system/midonet-cluster.service.d/overrides.conf
+    owner: root
+    group: root
     mode: 0644
-    content: |
-      [Service]
-      Environment=JMXDISABLE=true
-  tags:
-    - image
 
-- name: midolman memory
-  replace:
-    path: /etc/midolman/midolman-env.sh
-    regexp: '^MAX_HEAP_SIZE=".+"$'
-    replace: 'MAX_HEAP_SIZE="{{ midonet_midolman_heap }}"'
-  when: midonet_midolman_heap is not none
+- name: midonet cluster systemd drop-in uuid configuration
+  shell: |
+    set -eu
+    cat > /etc/systemd/system/midonet-cluster.service.d/uuid.conf <<EOF
+    [Service]
+    Environment=UUID=$(uuidgen --random)
+    EOF
+  args:
+    creates: /etc/systemd/system/midonet-cluster-http.service.d/uuid.conf
 
-- name: midolman systemd drop-in directory
+- name: midonet cluster logs directory
   file:
-    path: /etc/systemd/system/midolman.service.d
+    path: /var/log/midonet-cluster
     state: directory
     mode: 0755
-  tags:
-    - image
 
-- name: midolman systemd drop-in for disabling jmx listener
-  copy:
-    dest: /etc/systemd/system/midolman.service.d/jmxdisable.conf
+- name: midonet cluster environment sysconfig
+  template:
+    src: sysconfig-midonet-cluster.j2
+    dest: /etc/sysconfig/midonet-cluster
+    owner: root
+    group: root
     mode: 0644
-    content: |
-      [Service]
-      Environment=JMXDISABLE=true
-  tags:
-    - image
+
+- name: midonet cluster container and systemd service
+  shell: |
+    set -eu
+    podman create --name midonet-cluster \
+      --env-file /etc/sysconfig/midonet-cluster \
+      --env UUID \
+      --network host \
+      --volume /var/log/midonet-cluster:/var/log/midonet-cluster \
+      docker.io/sjones4/midonet-cluster:5.2
+    podman generate systemd --name --timeout 60 --restart-policy always midonet-cluster > /etc/systemd/system/midonet-cluster.service
+  args:
+    creates: /etc/systemd/system/midonet-cluster.service
+
+- name: midonet agent (midolman) systemd drop-in directory
+  file:
+    path: /etc/systemd/system/midonet-agent.service.d
+    state: directory
+    mode: 0755
+
+- name: midonet agent (midolman) systemd drop-in configuration
+  copy:
+    src: systemd-midonet-agent-overrides.conf
+    dest: /etc/systemd/system/midonet-agent.service.d/overrides.conf
+    owner: root
+    group: root
+    mode: 0644
+
+- name: midonet agent (midolman) systemd drop-in uuid configuration
+  shell: |
+    set -eu
+    cat > /etc/systemd/system/midonet-agent.service.d/uuid.conf <<EOF
+    [Service]
+    Environment=UUID=$(uuidgen --random)
+    EOF
+  args:
+    creates: /etc/systemd/system/midonet-agent.service.d/uuid.conf
+
+- name: midonet agent (midolman) logs directory
+  file:
+    path: /var/log/midonet-agent
+    state: directory
+    mode: 0755
+
+- name: midonet agent (midolman) environment sysconfig
+  template:
+    src: sysconfig-midonet-agent.j2
+    dest: /etc/sysconfig/midonet-agent
+    owner: root
+    group: root
+    mode: 0644
+
+- name: midonet agent (midolman) container and systemd service
+  shell: |
+    set -eu
+    podman create --name midonet-agent \
+      --env-file /etc/sysconfig/midonet-agent \
+      --env UUID \
+      --net host \
+      --privileged \
+      --volume /var/log/midonet-agent:/var/log/midolman \
+      docker.io/sjones4/midonet-agent:5.2
+    podman generate systemd --name --timeout 60 --restart-policy always midonet-agent > /etc/systemd/system/midonet-agent.service
+  args:
+    creates: /etc/systemd/system/midonet-agent.service
 
 - name: eucanetd service.d directory
   file:
@@ -230,9 +244,9 @@
     state: started
     name: midonet-cluster
 
-- name: start midolman service
+- name: start midonet-agent (midolman) service
   systemd:
     enabled: true
     state: started
-    name: midolman
+    name: midonet-agent
 

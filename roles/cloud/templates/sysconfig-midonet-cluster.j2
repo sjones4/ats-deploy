@@ -1,0 +1,7 @@
+CASSANDRA_ENDPOINTS={{ groups.midonet_nsdb | map('extract', hostvars, ['eucalyptus_host_cluster_ipv4']) | list | sort | join(',') }}
+CASSANDRA_FACTOR={{ midonet_cassandra_replication_factor }}
+ZK_ENDPOINTS={{ groups.midonet_nsdb | map('extract', hostvars, ['eucalyptus_host_cluster_ipv4']) | map('regex_replace', '^(.*)$', '\\1:2181')  | list | sort | join(',') }}
+MAX_HEAP_SIZE={{ midonet_cluster_heap }}
+HEAP_NEWSIZE={{ midonet_cluster_heap }}
+CLUSTER_RESTAPI_HTTPHOST=127.0.0.1
+CLUSTER_RESTAPI_HTTPPORT=8080

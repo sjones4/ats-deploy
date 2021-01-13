@@ -120,7 +120,7 @@
     set -eu
     podman create --name midonet-agent \
       --env-file /etc/sysconfig/midonet-agent \
-      --env-file /etc/sysconfig/midonet-cluster-uuid \
+      --env-file /etc/sysconfig/midonet-agent-uuid \
       --net host \
       --privileged \
       --volume /var/log/midonet-agent:/var/log/midolman \

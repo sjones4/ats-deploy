@@ -23,53 +23,68 @@
   register: command_result
   changed_when: "command_result is succeeded and command_result.stdout  != ''"
 
-- name: install midolman and dependency packages
+- name: install midonet dependency packages
   yum:
     name:
-      - java-1.8.0-openjdk-headless
-      - midolman
+      - podman
     state: present
   tags:
     - image
     - packages
 
-- name: midolman configuration
-  template:
-    src: midolman.conf.j2
-    dest: /etc/midolman/midolman.conf
+- name: midonet agent (midolman) systemd drop-in directory
+  file:
+    path: /etc/systemd/system/midonet-agent.service.d
+    state: directory
+    mode: 0755
+
+- name: midonet agent (midolman) systemd drop-in configuration
+  copy:
+    src: systemd-midonet-agent-overrides.conf
+    dest: /etc/systemd/system/midonet-agent.service.d/overrides.conf
     owner: root
     group: root
     mode: 0644
 
-- name: midolman memory
-  replace:
-    path: /etc/midolman/midolman-env.sh
-    regexp: '^MAX_HEAP_SIZE=".+"$'
-    replace: 'MAX_HEAP_SIZE="{{ midonet_midolman_heap }}"'
-  when: midonet_midolman_heap is not none
-
-- name: midolman systemd drop-in directory
+- name: midonet agent (midolman) logs directory
   file:
-    path: /etc/systemd/system/midolman.service.d
+    path: /var/log/midonet-agent
     state: directory
     mode: 0755
-  tags:
-    - image
 
-- name: midolman systemd drop-in for disabling jmx listener
-  copy:
-    dest: /etc/systemd/system/midolman.service.d/jmxdisable.conf
+- name: midonet agent (midolman) environment sysconfig
+  template:
+    src: sysconfig-midonet-agent.j2
+    dest: /etc/sysconfig/midonet-agent
+    owner: root
+    group: root
     mode: 0644
-    content: |
-      [Service]
-      Environment=JMXDISABLE=true
-  tags:
-    - image
 
-- name: start midolman service
+- name: midonet agent (midolman) uuid sysconfig
+  shell: |
+    set -eu
+    echo "UUID=$(uuidgen --random)" > /etc/sysconfig/midonet-agent-uuid
+  args:
+    creates: /etc/sysconfig/midonet-agent-uuid
+
+- name: midonet agent (midolman) container and systemd service
+  shell: |
+    set -eu
+    podman create --name midonet-agent \
+      --env-file /etc/sysconfig/midonet-agent \
+      --env-file /etc/sysconfig/midonet-agent-uuid \
+      --net host \
+      --privileged \
+      --volume /var/log/midonet-agent:/var/log/midolman \
+      docker.io/sjones4/midonet-agent:5.2
+    podman generate systemd --name --timeout 60 --restart-policy always midonet-agent > /etc/systemd/system/midonet-agent.service
+  args:
+    creates: /etc/systemd/system/midonet-agent.service
+
+- name: start midonet agent (midolman) service
   systemd:
     daemon_reload: true
     enabled: true
     state: started
-    name: midolman
+    name: midonet-agent
 

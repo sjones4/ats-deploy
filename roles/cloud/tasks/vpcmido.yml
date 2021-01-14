@@ -73,6 +73,7 @@
     podman create --name midonet-cluster \
       --env-file /etc/sysconfig/midonet-cluster \
       --env-file /etc/sysconfig/midonet-cluster-uuid \
+      --log-driver journald \
       --network host \
       --volume /var/log/midonet-cluster:/var/log/midonet-cluster \
       docker.io/sjones4/midonet-cluster:5.2
@@ -121,6 +122,7 @@
     podman create --name midonet-agent \
       --env-file /etc/sysconfig/midonet-agent \
       --env-file /etc/sysconfig/midonet-agent-uuid \
+      --log-driver journald \
       --net host \
       --privileged \
       --volume /var/log/midonet-agent:/var/log/midolman \

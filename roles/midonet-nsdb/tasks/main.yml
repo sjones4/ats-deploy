@@ -41,6 +41,7 @@
     set -eu
     podman create --name cassandra \
       --env-file /etc/sysconfig/cassandra \
+      --log-driver journald \
       --publish {{ eucalyptus_host_cluster_ipv4 }}:7000:7000 \
       --publish {{ eucalyptus_host_cluster_ipv4 }}:9042:9042 \
       --volume /var/lib/cassandra:/var/lib/cassandra \
@@ -99,6 +100,7 @@
     set -eu
     podman create --name zookeeper \
       --env-file /etc/sysconfig/zookeeper \
+      --log-driver journald \
       --publish {{ eucalyptus_host_cluster_ipv4 }}:2181:2181 \
       --publish {{ eucalyptus_host_cluster_ipv4 }}:2888:2888 \
       --publish {{ eucalyptus_host_cluster_ipv4 }}:3888:3888 \

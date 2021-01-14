@@ -73,6 +73,8 @@
     podman create --name midonet-agent \
       --env-file /etc/sysconfig/midonet-agent \
       --env-file /etc/sysconfig/midonet-agent-uuid \
+      --log-driver journald \
+      --log-opt tag=midonet-agent \
       --net host \
       --privileged \
       --volume /var/log/midonet-agent:/var/log/midolman \

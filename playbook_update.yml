@@ -1,0 +1,253 @@
+---
+# Eucalyptus update playbook
+#
+# Recreate stacks post update to use new images:
+#
+# Imaging worker:
+#
+#   esi-manage-stack -a delete
+#   esi-manage-stack -a create
+#
+# Console if using cloud deployment:
+#
+#   /usr/local/bin/console-manage-stack -a delete
+#   /usr/local/bin/console-manage-stack -a create
+#
+
+# Initialize hosts and facts
+- hosts: all
+  name: initialize host groups
+  gather_facts: no
+  tasks:
+  - name: read eucalyptus configuration
+    slurp:
+      path: /etc/eucalyptus/eucalyptus.conf
+    register: slurp_result
+    delegate_to: "{{ groups.cloud[0] }}"
+    tags:
+    - check
+  - name: extract mode from eucalyptus configuration
+    set_fact:
+      eucalyptus_net_mode: "{{ slurp_result.content | b64decode | regex_findall('^\\s*VNET_MODE\\s*=\\s*\"(.*)\"\\s*$', multiline=True) | join('') }}"
+    tags:
+    - check
+  - import_tasks: host_groups.yml
+    vars:
+      net_mode: "{{ eucalyptus_net_mode | default('EDGE') }}"
+    tags:
+    - check
+
+# Clean up and checks
+- hosts: all
+  name: pre-ugprade cleanup
+  gather_facts: yes
+  tasks:
+  - name: clean yum data
+    shell: |
+      yum clean all
+    args:
+      warn: False
+    changed_when: False
+    tags:
+    - check
+
+- hosts: cloud:zone:node
+  name: update version check
+  gather_facts: no
+  tasks:
+  - name: eucalyptus package check
+    shell: |
+      yum list available eucalyptus
+    args:
+      warn: False
+    changed_when: False
+    tags:
+    - check
+  - name: check eucalyptus version
+    slurp:
+      path: /etc/eucalyptus/eucalyptus-version
+    register: slurp_result
+    changed_when: False
+    failed_when: slurp_result is failed or not (slurp_result.content | b64decode is match("5\\.[0-9]+\\.[0-9]+"))
+    tags:
+    - check
+
+# Update
+- hosts: cloud:zone:node:console
+  name: stop services
+  gather_facts: no
+  tasks:
+  - name: eucalyptus stop services
+    systemd:
+      state: stopped
+      name: "{{ item }}"
+    register: systemd_result
+    failed_when: "systemd_result is failed and 'Could not find the requested service' not in systemd_result.msg"
+    loop:
+    - "eucalyptus-cloud.service"
+    - "eucanetd.service"
+    - "eucalyptus-node.service"
+    - "eucaconsole.service"
+
+- hosts: cloud:zone:node
+  name: update packages
+  gather_facts: no
+  tasks:
+  - name: update eucalyptus packages
+    shell: |
+      yum update --assumeyes 'eucalyptus*'
+    args:
+      warn: False
+
+- hosts: console
+  name: update console package
+  gather_facts: no
+  tasks:
+  - name: update console package
+    shell: |
+      yum update --assumeyes eucaconsole
+    args:
+      warn: False
+
+- hosts: node
+  name: start node services
+  gather_facts: no
+  tasks:
+  - name: start node controller
+    systemd:
+      state: started
+      name: eucalyptus-node.service
+  - name: start eucanetd
+    systemd:
+      state: started
+      name: eucanetd.service
+    when: eucalyptus_net_mode == "EDGE"
+
+- hosts: cloud:zone
+  name: start eucalyptus cloud service
+  gather_facts: no
+  tasks:
+  - name: start / update eucalyptus cloud
+    systemd:
+      state: started
+      name: eucalyptus-cloud.service
+
+- hosts: cloud
+  name: start eucanetd service
+  gather_facts: no
+  tasks:
+  - name: start / update eucanetd
+    systemd:
+      state: started
+      name: eucanetd.service
+    when: eucalyptus_net_mode == "VPCMIDO"
+
+- hosts: console
+  name: start console service
+  gather_facts: no
+  tasks:
+  - name: start console
+    systemd:
+      state: started
+      name: eucaconsole.service
+
+# Post update configuration
+- hosts: cloud
+  name: update system images
+  gather_facts: no
+  tasks:
+  - name: update service image from rpm
+    shell: |
+      set -eu
+      eval $(clcadmin-assume-system-credentials)
+      if ! euctl services.imaging.worker.image services.loadbalancing.worker.image | grep "[ae]mi-" ; then
+        esi-install-image --force --remove-all
+      fi
+      esi-install-image --install-default
+    register: shell_result
+    changed_when: '"is already registered." not in shell_result.stderr'
+    failed_when:
+      - shell_result.rc != 0
+      - '"is already registered." not in shell_result.stderr'
+    until: shell_result is succeeded
+    retries: 5
+    when: cloud_service_image_rpm | default(True)
+  - name: check for service image as system image
+    shell: |
+      set -eu
+      eval $(clcadmin-assume-system-credentials)
+      SERVICE_IMAGE_LATEST_VERSION=$(/usr/local/bin/eucalyptus-system-images --report | grep service | cut -f 4)
+      if [ -z "$(euca-describe-images --filter tag:version=${SERVICE_IMAGE_LATEST_VERSION} --filter tag:type=eucalyptus-service-image)" ] ; then
+        SERVICE_IMAGEID=$(euca-describe-images --filter tag:type=eucalyptus-service-image | head -n 1 | grep ^IMAGE | cut -f 2)
+        euca-deregister "${SERVICE_IMAGEID}"
+      fi
+    when: not (cloud_service_image_rpm | default(True))
+  - name: update service image as system image
+    shell: |
+      set -eu
+      eval $(clcadmin-assume-system-credentials)
+      /usr/local/bin/eucalyptus-system-images --type service --size {{ cloud_service_image_size | default("5") | quote }}
+    register: shell_result
+    changed_when: '"image already installed" not in shell_result.stderr'
+    failed_when:
+      - shell_result.rc != 0
+      - shell_result.rc != 2
+    when: not (cloud_service_image_rpm | default(True))
+  - name: update service image cloud properties
+    shell: |
+      set -euo pipefail
+      eval $(clcadmin-assume-system-credentials)
+      SERVICE_IMAGEID=$(euca-describe-images --filter tag:type=eucalyptus-service-image | head -n 1 | grep ^IMAGE | cut -f 2)
+      OLD_IMAGING_IMAGEID=$(euctl -n services.imaging.worker.image)
+      OLD_LOADBALANCING_IMAGEID=$(euctl -n services.loadbalancing.worker.image)
+      if [ "${SERVICE_IMAGEID}" != "${OLD_IMAGING_IMAGEID}" ] || [ "${SERVICE_IMAGEID}" != "${OLD_LOADBALANCING_IMAGEID}" ] ; then
+        euctl services.imaging.worker.image="${SERVICE_IMAGEID}"
+        euctl services.loadbalancing.worker.image="${SERVICE_IMAGEID}"
+      else
+        echo "Service image cloud properties not changed." >&2
+      fi
+    register: shell_result
+    changed_when: '"not changed" not in shell_result.stderr'
+    when: not (cloud_service_image_rpm | default(True))
+  - name: check for console image as system image
+    shell: |
+      set -eu
+      eval $(clcadmin-assume-system-credentials)
+      CONSOLE_IMAGE_LATEST_VERSION=$(/usr/local/bin/eucalyptus-system-images --report | grep console | cut -f 4)
+      if [ -z "$(euca-describe-images --filter tag:version=${CONSOLE_IMAGE_LATEST_VERSION} --filter tag:type=eucalyptus-console-image)" ] ; then
+        CONSOLE_IMAGEID=$(euca-describe-images --filter tag:type=eucalyptus-console-image | head -n 1 | grep ^IMAGE | cut -f 2)
+        euca-deregister "${CONSOLE_IMAGEID}"
+      fi
+    when: eucalyptus_console_cloud_deploy | default(False)
+  - name: update console image as system image
+    shell: |
+      set -eu
+      eval $(clcadmin-assume-system-credentials)
+      /usr/local/bin/eucalyptus-system-images --type console --size 10
+    register: shell_result
+    changed_when: '"image already installed" not in shell_result.stderr'
+    failed_when:
+      - shell_result.rc != 0
+      - shell_result.rc != 2
+    when: eucalyptus_console_cloud_deploy | default(False)
+  - name: update console stack configuration
+    shell: |
+      set -euo pipefail
+      eval $(clcadmin-assume-system-credentials)
+      CONSOLE_IMAGEID=$(euca-describe-images --filter tag:type=eucalyptus-console-image | head -n 1 | grep ^IMAGE | cut -f 2)
+      sed --in-place "s/CONSOLE_IMAGEID=.*/CONSOLE_IMAGEID=${CONSOLE_IMAGEID}/" /etc/eucalyptus/console.conf
+    when:
+    - eucalyptus_console_cloud_deploy | default(False)
+    - shell_result.changed
+  - name: console account image launch permission
+    shell: |
+      set -euo pipefail
+      eval $(clcadmin-assume-system-credentials)
+      CONSOLE_IMAGEID=$(euca-describe-images --filter tag:type=eucalyptus-console-image | head -n 1 | grep ^IMAGE | cut -f 2)
+      CONSOLE_ACCOUNT_ALIAS={{ eucalyptus_console_account | default("console") | quote }}
+      CONSOLE_ACCOUNT_NUMBER=$(euare-accountlist | grep "^${CONSOLE_ACCOUNT_ALIAS}[[:space:]]" | cut -f 2)
+      euca-modify-image-attribute -l -a "${CONSOLE_ACCOUNT_NUMBER}" "${CONSOLE_IMAGEID}"
+    when:
+    - eucalyptus_console_cloud_deploy | default(False)
+    - shell_result.changed
+

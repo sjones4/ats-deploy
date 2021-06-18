@@ -1,6 +1,14 @@
 ---
 # Provision and renew letsencrypt https certificate using certbot
 
+- name: install eucaconsole related utility packages
+  yum:
+    name: bind-utils
+    state: present
+  tags:
+    - image
+    - packages
+
 - name: install certbot package
   yum:
     name: certbot
@@ -26,6 +34,11 @@
     fi
     if [ "{{ 'true' if eucaconsole_certbot_request_service_domains else 'false' }}" = "true" ] ; then
       EXTRA_OPTS="${EXTRA_OPTS} --deploy-hook /usr/local/bin/eucalyptus-cloud-https-import"
+    fi
+    RESOLVE_RESULTS=$(dig +short "${CONSOLE_DOMAIN}")
+    if [ -z "${RESOLVE_RESULTS}" ] ; then
+      echo "Console name lookup failure (use eucalyptus_console_cname, or eucalyptus_console_ipv4 for cloud dns)" >&2
+      exit 1
     fi
     ln -s -f -T /etc/letsencrypt/live/eucaconsole/fullchain.pem /etc/pki/tls/certs/eucaconsole.crt
     ln -s -f -T /etc/letsencrypt/live/eucaconsole/privkey.pem /etc/pki/tls/private/eucaconsole.key
